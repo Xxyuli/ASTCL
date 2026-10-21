@@ -46,13 +46,13 @@ class JointAttention(nn.Module):
         self.split_indexes = (in_channels - 3 * pc, pc, pc, pc)
 
     def forward(self, x):
-        #b,n,t,c
+        # Input and output: [B, C, N, T].
         b,c,n,t = x.shape
 
         x_id, x_st, x_s, x_t = torch.split(x, self.split_indexes, dim=1)
         t_x = x_t
         s_x = x_s.permute(0,1,3,2)
-        st_x = x_st.permute(0,3,1,2).reshape(b,-1,self.channels)
+        st_x = x_st.permute(0,2,3,1).reshape(b,n*t,self.channels)
         
         id_x = x_id
         t_x = self.T_attention(t_x)
@@ -71,6 +71,18 @@ class ASTCL(nn.Module):
                   dropout=0.5):
         super(ASTCL, self).__init__()
 
+        if len(channels) != depth + 1 or len(heads) != depth:
+            raise ValueError("channels and heads must match depth")
+        if channels[0] != num_features:
+            raise ValueError("channels[0] must equal num_features")
+        if num_timesteps_input != num_timesteps_output:
+            raise ValueError("ASTCL preserves time length; input and output timesteps must match")
+        for width, head in zip(channels[1:], heads):
+            if partial < 3 or head <= 0 or width <= 0 or width % partial or width // partial % head:
+                raise ValueError("channels must be divisible by partial; partial channels must be divisible by heads")
+        self.num_features = num_features
+        self.num_timesteps_input = num_timesteps_input
+        self.node_num = node_num
         self.depth = depth
         self.partial = partial
 
@@ -100,6 +112,12 @@ class ASTCL(nn.Module):
         
     def forward(self, input, adj):
 
+        # CrossDataset supplies [B, N, T, C] and a batched [B, N, N] graph.
+        if input.ndim != 4 or tuple(input.shape[1:]) != (
+                self.node_num, self.num_timesteps_input, self.num_features):
+            raise ValueError("input must have shape [B, node_num, input_timesteps, num_features]")
+        if tuple(adj.shape) != (input.shape[0], self.node_num, self.node_num):
+            raise ValueError("adj must have shape [B, node_num, node_num]")
         input = input.float()
         input = self.revin_layer(input, 'norm')
         input = input.permute(0, 3, 1, 2).contiguous()
@@ -114,7 +132,7 @@ class ASTCL(nn.Module):
 
             x = F.leaky_relu(self.start_conv[i](x), 0.2)
             shortcut = x
-            x = F.leaky_relu(self.joint_attention[i](x.permute(0,2,3,1)), 0.2)
+            x = F.leaky_relu(self.joint_attention[i](x), 0.2)
             x = F.leaky_relu(self.joint_conv[i](x), 0.2)
 
             x = x + x_gcn[i] + shortcut
@@ -122,7 +140,8 @@ class ASTCL(nn.Module):
         x = self.dropout_layer(x)
         output = self.end_conv(x)
 
-        output = torch.squeeze(self.revin_layer(output.permute(0,2,3,1), 'denorm')[:,0,:,0])
+        # Predict feature 0 of the target node (node 0), retaining batch/time axes.
+        output = self.revin_layer(output.permute(0,2,3,1), 'denorm')[:,0,:,0]
 
         return output
     

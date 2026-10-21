@@ -290,8 +290,8 @@ def test(args, logging, model, test_dataloader):
             move_mape = np.mean(np.array(batches_test_metrics['MAPEs']))
             loop.set_postfix(MAE=move_mae, RMSE=move_rmse, MAPE=move_mape)
     end = time.time()
-    out = np.vstack(out).squeeze()  # (samples, out_steps, num_nodes)
-    y = np.vstack(y).squeeze()
+    out = np.vstack(out)  # (samples, out_steps)
+    y = np.vstack(y)
     mae_all = masked_MAE(out, y)
     rmse_all = masked_RMSE(out, y)
     mape_all = masked_MAPE(out, y)
@@ -335,7 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=config['model']['seed'], help='random seed')  #seed set 1 or 7
     parser.add_argument('--device', type=str, default=device, help='device')
     parser.add_argument('--gpu_id', type=str, default='2', help='gpu id')
-    parser.add_argument('--data', type=str, nargs='+', default='data/PEMS08', help='data path')
+    parser.add_argument('--data', type=str, default='data/PEMS08', help='data path')
     parser.add_argument('--keep_days', type=float, default=config['model']['keep_days'],
                         help='number of the days to training the model')
     parser.add_argument('--percent', type=float, default=config['model']['percent'],

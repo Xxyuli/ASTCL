@@ -19,7 +19,7 @@ class linear(nn.Module):
         return self.mlp(x)
 
 class GCN(nn.Module):
-    def __init__(self,c_in,c_out,dropout,support_len=3,order=2):
+    def __init__(self,c_in,c_out,dropout,support_len=1,order=2):
         super(GCN,self).__init__()
         self.nconv = nconv()
         c_in = (order*support_len+1)*c_in

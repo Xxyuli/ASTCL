@@ -21,66 +21,13 @@ else:
     device = 'cpu'
 print(device)
 
-DATASET = 'PEMS08'  
-parser = argparse.ArgumentParser()
-config_file = 'config/{}.conf'.format(DATASET)
-print('Read configuration file: %s' % (config_file))
-config = configparser.ConfigParser()
-config.read(config_file)
-
-parser.add_argument('--seed', type=int, default=config['model']['seed'], help='random seed')  #seed set 1 or 7
-parser.add_argument('--device', type=str, default=device, help='device')
-parser.add_argument('--gpu_id', type=str, default='2', help='gpu id')
-parser.add_argument('--data', type=str, nargs='+', default='data/PEMS08', help='data path')
-parser.add_argument('--keep_days', type=float, default=config['model']['keep_days'],
-                        help='number of the days to training the model')
-parser.add_argument('--percent', type=float, default=config['model']['percent'],
-                        help='percent of traffic sensors to training the model')
-parser.add_argument('--interval', type=float, default=config['model']['interval'],
-                        help='timestamp interval')
-parser.add_argument('--type', type=str, default=config['model']['type'], help='prediction target')
-parser.add_argument('--num_nodes', type=int, default=config['model']['num_nodes'], help='number of nodes in traffic graph')
-parser.add_argument('--num_features', type=int, default=config['model']['num_features'], help='traffic event: task, timestamp, conectivity')
-parser.add_argument('--num_heads', type=str, default=config['model']['num_heads'], help='number of attention heads')
-parser.add_argument('--partial', type=int, default=config['model']['partial'], help='partial of channels')
-parser.add_argument('--channels', type=str, default=config['model']['channels'], help='feature dimension in model')
-parser.add_argument('--depth', type=int, default=config['model']['depth'], help='depth of model')
-parser.add_argument('--t_history', type=int, default=config['model']['t_history'], help='T_h')
-parser.add_argument('--t_pred', type=int, default=config['model']['t_pred'], help='T_r')
-parser.add_argument('--target_node', type=int, default=0, help='target node to predict')
-parser.add_argument('--epochs', type=int, default=config['model']['epochs'], help='number of epochs')
-parser.add_argument('--lr', type=float, default=config['model']['lr'], help='learning rate')
-parser.add_argument('--weight_decay', type=float, default=config['model']['weight_decay'], help='weight decay rate')
-parser.add_argument('--batch_size', type=int, default=config['model']['batch_size'], help='batch size')
-parser.add_argument('--dropout', type=float, default=config['model']['dropout'], help='dropout rate')
-parser.add_argument('--train', type=eval, default=config['model']['train'], help='whether genetate train dataset')
-parser.add_argument('--val', type=eval, default=config['model']['val'], help='whether genetate val dataset')
-parser.add_argument('--test', type=eval, default=config['model']['test'], help='whether genetate test dataset')
-parser.add_argument('--save', action='store_true', default=True, help='whether save model')
-parser.add_argument('--debug', action='store_true', default=False, help='debug mode, faster')
-parser.add_argument('--warmstart', type=str, default='weights/pems08.pt',help='innitial weight')
-args = parser.parse_args()
-
-
-print('Prepareing dataset...')
-train_samples_path, train_targets_path, train_graph_path,\
-        val_samples_path, val_targets_path, val_graph_path,\
-        test_samples_path, test_targets_path, test_graph_path = \
-    preprocess_dataset(args.data, t_in=args.t_history, t_out=args.t_pred,
-                               num_nodes=args.num_nodes, keep_days=args.keep_days,
-                               percent=args.percent, interval=args.interval,
-                               train = args.train, val=args.val, test = args.test,
-                               debug=args.debug, type=args.type)
-test_set = CrossDataset(test_samples_path, test_targets_path, test_graph_path)
-test_dataloader = DataLoader(test_set, batch_size=args.batch_size,
-                             shuffle=False, drop_last=False, num_workers=0)
 
 def test():
     num_heads = [int(i) for i in list(args.num_heads.split(','))]
     channels = [int(i) for i in list(args.channels.split(','))]
     model = ASTCL(channels, num_heads, args.depth, args.partial, args.num_features,
                      args.t_history, args.t_pred, node_num=args.num_nodes, dropout=args.dropout)
-    checkpoint = torch.load('weights/pems08.pt', map_location=device)
+    checkpoint = torch.load(args.warmstart, map_location=args.device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(args.device)
     model.eval()
@@ -115,8 +62,8 @@ def test():
             move_mape = np.mean(np.array(batches_test_metrics['MAPEs']))
             loop.set_postfix(MAE=move_mae, RMSE=move_rmse, MAPE=move_mape)
     end = time.time()
-    out = np.vstack(out).squeeze() 
-    y = np.vstack(y).squeeze()
+    out = np.vstack(out)
+    y = np.vstack(y)
     mae_all = masked_MAE(out, y)
     rmse_all = masked_RMSE(out, y)
     mape_all = masked_MAPE(out, y)
@@ -131,4 +78,57 @@ def test():
     print(f"Inference time: {(end-start):.2f} s")
 
 if __name__ == '__main__':
+    DATASET = 'PEMS08'
+    parser = argparse.ArgumentParser()
+    config_file = 'config/{}.conf'.format(DATASET)
+    print('Read configuration file: %s' % (config_file))
+    config = configparser.ConfigParser()
+    config.read(config_file)
+
+    parser.add_argument('--seed', type=int, default=config['model']['seed'], help='random seed')  #seed set 1 or 7
+    parser.add_argument('--device', type=str, default=device, help='device')
+    parser.add_argument('--gpu_id', type=str, default='2', help='gpu id')
+    parser.add_argument('--data', type=str, default='data/PEMS08', help='data path')
+    parser.add_argument('--keep_days', type=float, default=config['model']['keep_days'],
+                            help='number of the days to training the model')
+    parser.add_argument('--percent', type=float, default=config['model']['percent'],
+                            help='percent of traffic sensors to training the model')
+    parser.add_argument('--interval', type=float, default=config['model']['interval'],
+                            help='timestamp interval')
+    parser.add_argument('--type', type=str, default=config['model']['type'], help='prediction target')
+    parser.add_argument('--num_nodes', type=int, default=config['model']['num_nodes'], help='number of nodes in traffic graph')
+    parser.add_argument('--num_features', type=int, default=config['model']['num_features'], help='traffic event: task, timestamp, conectivity')
+    parser.add_argument('--num_heads', type=str, default=config['model']['num_heads'], help='number of attention heads')
+    parser.add_argument('--partial', type=int, default=config['model']['partial'], help='partial of channels')
+    parser.add_argument('--channels', type=str, default=config['model']['channels'], help='feature dimension in model')
+    parser.add_argument('--depth', type=int, default=config['model']['depth'], help='depth of model')
+    parser.add_argument('--t_history', type=int, default=config['model']['t_history'], help='T_h')
+    parser.add_argument('--t_pred', type=int, default=config['model']['t_pred'], help='T_r')
+    parser.add_argument('--target_node', type=int, default=0, help='target node to predict')
+    parser.add_argument('--epochs', type=int, default=config['model']['epochs'], help='number of epochs')
+    parser.add_argument('--lr', type=float, default=config['model']['lr'], help='learning rate')
+    parser.add_argument('--weight_decay', type=float, default=config['model']['weight_decay'], help='weight decay rate')
+    parser.add_argument('--batch_size', type=int, default=config['model']['batch_size'], help='batch size')
+    parser.add_argument('--dropout', type=float, default=config['model']['dropout'], help='dropout rate')
+    parser.add_argument('--train', type=eval, default=config['model']['train'], help='whether genetate train dataset')
+    parser.add_argument('--val', type=eval, default=config['model']['val'], help='whether genetate val dataset')
+    parser.add_argument('--test', type=eval, default=config['model']['test'], help='whether genetate test dataset')
+    parser.add_argument('--save', action='store_true', default=True, help='whether save model')
+    parser.add_argument('--debug', action='store_true', default=False, help='debug mode, faster')
+    parser.add_argument('--warmstart', type=str, default='weights/pems08.pt',help='innitial weight')
+    args = parser.parse_args()
+
+
+    print('Prepareing dataset...')
+    train_samples_path, train_targets_path, train_graph_path,\
+            val_samples_path, val_targets_path, val_graph_path,\
+            test_samples_path, test_targets_path, test_graph_path = \
+        preprocess_dataset(args.data, t_in=args.t_history, t_out=args.t_pred,
+                                   num_nodes=args.num_nodes, keep_days=args.keep_days,
+                                   percent=args.percent, interval=args.interval,
+                                   train = args.train, val=args.val, test = args.test,
+                                   debug=args.debug, type=args.type)
+    test_set = CrossDataset(test_samples_path, test_targets_path, test_graph_path)
+    test_dataloader = DataLoader(test_set, batch_size=args.batch_size,
+                                 shuffle=False, drop_last=False, num_workers=0)
     test()
